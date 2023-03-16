@@ -44,32 +44,6 @@ func main() {
 		imagePath := "uploads/" + imageFile.Filename
 		err = c.SaveUploadedFile(imageFile, imagePath)
 		if err != nil {
-			router.GET("/products", func(c *gin.Context) {
-				// Query all products from database
-				rows, err := db.Query("SELECT id, name, description, image FROM products")
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-				defer rows.Close()
-
-				// Create list of products with image paths
-				var products []Product
-				for rows.Next() {
-					var id int
-					var name, description, image string
-					err = rows.Scan(&id, &name, &description, &image)
-					if err != nil {
-						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-						return
-					}
-					product := Product{id, name, description, image}
-					products = append(products, product)
-				}
-
-				// Serve list of products as JSON response
-				c.JSON(http.StatusOK, products)
-			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -86,6 +60,7 @@ func main() {
 		product := Product{id, name, description, imagePath}
 		c.JSON(http.StatusCreated, product)
 	})
+
 	router.GET("/products", func(c *gin.Context) {
 		// Query all products from database
 		rows, err := db.Query("SELECT id, name, description, imageurl FROM items")
