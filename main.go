@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -18,7 +16,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type Items struct {
+type Product struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -26,7 +24,6 @@ type Items struct {
 }
 
 func main() {
-
 	// Open the SQLite database
 	db, err := sql.Open("postgres", "postgresql://postgres:root@localhost/temp?sslmode=disable")
 	fmt.Println("connected to database!")
@@ -35,11 +32,17 @@ func main() {
 	}
 	defer db.Close()
 
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Create a new router using the Gorilla/mux package
 	r := mux.NewRouter()
 
 	// Define the handler function for the POST /products endpoint
-	r.HandleFunc("/items", func(w http.ResponseWriter, r *http.Request) {
+	// Define the handler function for the POST /products endpoint
+	// Define the handler function for the POST /products endpoint
+	r.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
 		// Parse the multipart form data from the request
 		err := r.ParseMultipartForm(10 << 20) // 10 MB
 		if err != nil {
@@ -57,13 +60,12 @@ func main() {
 		}
 		defer imageFile.Close()
 
-		// Generate a unique filename for the image
-		rand.Seed(time.Now().UnixNano())
-		randString := strconv.FormatInt(rand.Int63(), 16)
-		fileName := time.Now().Format("2006-01-02T15-04-05.999999999") + "-" + randString
+		// Generate a unique filename for the image based on the current time and file extension
+		ext := filepath.Ext(imageFile.Filename)
+		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
 
 		// Create a new file to save the image
-		outFile, err := os.Create(filepath.Join("uploads", fileName))
+		outFile, err := os.Create(filepath.Join("uploads", filename))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -78,7 +80,7 @@ func main() {
 		}
 
 		// Save the product data to the database
-		result, err := db.Exec("INSERT INTO items (name, description, imageurl) VALUES ($1, $2, $3)", name, description, fileName)
+		result, err := db.Exec("INSERT INTO items (name, description, imageurl) VALUES ($1, $2, $3)", name, description, filename)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -92,19 +94,22 @@ func main() {
 		}
 
 		// Send the response with the new product data
-		items := &Items{
+		product := &Product{
 			ID:          int(id),
 			Name:        name,
 			Description: description,
-			ImageURL:    fmt.Sprintf("/uploads/%s", fileName),
+			ImageURL:    fmt.Sprintf("/uploads/%s", filename),
 		}
-		json.NewEncoder(w).Encode(items)
+		json.NewEncoder(w).Encode(product)
 	}).Methods("POST")
 
 	// Serve static files from the uploads directory
 	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
 	// Start the HTTP server
-	log.Println("Server listening on :8080...")
-	http.ListenAndServe(":8080", r)
+	log.Println("Listening on :7080...")
+	err = http.ListenAndServe(":7080", r)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
