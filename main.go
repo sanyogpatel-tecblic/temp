@@ -2,102 +2,147 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
-	"github.com/gin-gonic/gin"
+	"github.com/gorilla/mux"
+
 	_ "github.com/lib/pq"
 )
 
-type Product struct {
+type Item struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Image       string `json:"image"`
+	ImageURL    string `json:"image_url"`
 }
 
 func main() {
-	// Set up database connection
-	db, err := sql.Open("postgres", "user=postgres password=root dbname=temp sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://postgres:root@localhost/temp?sslmode=disable")
+	fmt.Println("connected to database!")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	r := mux.NewRouter()
+	// r.HandleFunc("/items", GetAllItems(db)).Methods("GET")
+	r.HandleFunc("/items", createItemHandler(db)).Methods("POST")
+	r.HandleFunc("/items", GetItems(db)).Methods("GET")
 
-	// Set up Gin router
-	router := gin.Default()
+	// Set up the file server to serve files from the 'uploads' directory
+	fileServer := http.FileServer(http.Dir("./uploads"))
 
-	// Handle POST request to create a new product
-	router.POST("/products", func(c *gin.Context) {
-		// Get form data from request PostForm is used to get form data
-		name := c.PostForm("name")
-		description := c.PostForm("description")
-		//FORM_FILE is used to get image that is uploaded by us
-		imageFile, err := c.FormFile("image")
+	//r.PathPrefix("/uploads/") this means that any request that begins with /uploads/ will be handled by this route
+	//http.StripPrefix basically removes the words "http://localhost:8020/uploads/imagename.jpg"
+	//basically it will remove "http://localhost:8020" so that remaining path will be sent to fileserver
+	//so that correct file is being served
+
+	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", fileServer))
+
+	log.Fatal(http.ListenAndServe(":8020", r))
+}
+
+func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.ParseMultipartForm(10 << 20)
+
+		name := r.FormValue("name")
+		description := r.FormValue("description")
+		image, handler, err := r.FormFile("image")
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Error getting image file: %v", err)
+			return
+		}
+		defer image.Close()
+
+		filename := handler.Filename
+		ext := filepath.Ext(filename)
+		tempFile, err := os.CreateTemp("", "upload-*"+ext)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Error creating temporary file: %v", err)
+			return
+		}
+		defer tempFile.Close()
+		io.Copy(tempFile, image)
+
+		imageURL := tempFile.Name()
+
+		newPath := filepath.Join("uploads", filename)
+		err = os.Rename(tempFile.Name(), newPath)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Error moving file to uploads directory: %v", err)
 			return
 		}
 
-		// Save image to disk
-		imagePath := "uploads/" + imageFile.Filename
-		err = c.SaveUploadedFile(imageFile, imagePath)
+		imageURL = newPath
+
+		stmt, err := db.Prepare(`INSERT INTO items (name,description, imageurl) VALUES ($1, $2, $3)`)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+			log.Println(w, "Error preparing SQL statement: %v", err)
+			return
+		}
+		defer stmt.Close()
+
+		result, err := stmt.Exec(name, description, imageURL)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Error executing SQL statement: %v", err)
 			return
 		}
 
-		// Insert new product into database
-		var id int
-		err = db.QueryRow("INSERT INTO items (name, description, imageurl) VALUES ($1, $2, $3) RETURNING id", name, description, imagePath).Scan(&id)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		id, _ := result.LastInsertId()
+
+		item := Item{
+			ID:          int(id),
+			Name:        name,
+			Description: description,
+			ImageURL:    imageURL,
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, "Item created successfully: %+v", item)
+	}
+}
+
+func GetItems(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Return response with new product data
-		product := Product{id, name, description, imagePath}
-		c.JSON(http.StatusCreated, product)
-	})
-
-	router.GET("/products", func(c *gin.Context) {
-		// Query all products from database
-		rows, err := db.Query("SELECT id, name, description, imageurl FROM items")
+		var items []Item
+		rows, err := db.Query("SELECT id, name, description,imageurl FROM items")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
-
-		// Create list of products with image paths
-		var products []Product
 		for rows.Next() {
-			var id int
-			var name, description, image string
-			err = rows.Scan(&id, &name, &description, &image)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+			var item Item
+			row_var := rows.Scan(&item.ID, &item.Name, &item.Description, &item.ImageURL)
+			if row_var != nil {
+				log.Fatal(row_var)
 			}
-			product := Product{id, name, description, image}
-			products = append(products, product)
+			items = append(items, item)
 		}
-
-		// Serve list of products as JSON response
-		c.JSON(http.StatusOK, products)
-	})
-
-	// Serve static files (uploaded images)
-	router.Static("/uploads", "./uploads")
-
-	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8010"
+		json.NewEncoder(w).Encode(items)
 	}
-	err = http.ListenAndServe(":"+port, router)
+}
+
+func getBaseDir() string {
+	baseDir := "uploads"
+	err := os.MkdirAll(baseDir, os.ModePerm)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return baseDir
 }
