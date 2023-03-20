@@ -106,7 +106,6 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 			Description: description,
 			ImageURL:    imageURL,
 		}
-
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintf(w, "Item created successfully: %+v", item)
 	}

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Items</title>
+</head>
+<body>
+	<table>
+		<thead>
+			<tr>
+		
+				<th>Name</th>
+				<th>Description</th>
+				<th>Image</th>
+			</tr>
+		</thead>
+
+		<tbody>
+			{{range .}}
+			<tr>
+			
+				<td>{{.Name}}</td>
+				<td>{{.Description}}</td>
+				
+				<td><img src="{{.ImageURL}}" alt="{{.Name}}" height="50"></td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</body>
+</html>
