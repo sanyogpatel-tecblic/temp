@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -21,6 +22,8 @@ type Item struct {
 	Description string `json:"description"`
 	ImageURL    string `json:"image_url"`
 }
+
+const port = ":1040"
 
 func main() {
 	db, err := sql.Open("postgres", "postgresql://postgres:root@localhost/temp?sslmode=disable")
@@ -43,7 +46,7 @@ func main() {
 
 	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", fileServer))
 
-	log.Fatal(http.ListenAndServe(":8020", r))
+	log.Fatal(http.ListenAndServe(port, r))
 }
 
 func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +74,7 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 		defer tempFile.Close()
 		io.Copy(tempFile, image)
 
-		imageURL := tempFile.Name()
+		// imageURL := tempFile.Name()
 
 		newPath := filepath.Join("uploads", filename)
 		err = os.Rename(tempFile.Name(), newPath)
@@ -80,10 +83,11 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 			fmt.Fprintf(w, "Error moving file to uploads directory: %v", err)
 			return
 		}
+		portwithoutcolun := strings.Replace(port, ":", "", 1)
+		imageURL := fmt.Sprintf("http://localhost:"+portwithoutcolun+"/uploads/%s", filename)
+		// imageURL = fmt.Sprintf("http://%s/uploads/%s", portwithoutcolun, filename)
 
-		imageURL = newPath
-
-		stmt, err := db.Prepare(`INSERT INTO items (name,description, imageurl) VALUES ($1, $2, $3)`)
+		stmt, err := db.Prepare(`INSERT INTO items (name, description, imageurl) VALUES ($1, $2, $3)`)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.Println(w, "Error preparing SQL statement: %v", err)

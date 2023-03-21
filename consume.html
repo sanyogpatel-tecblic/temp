@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product List</title>
+</head>
+<body>
+    <div id="product-list"></div>
+    <script>
+        fetch("http://localhost:1502/products")
+            .then(response => response.json())
+            .then(products => {
+                const productList = document.getElementById("product-list");
+                products.forEach(product => {
+                    const productCard = document.createElement("div");
+                    productCard.innerHTML = `
+                        <h2>${product.name}</h2>
+                        <img src="${product.image_url}" alt="${product.name}">
+                        <p>${product.description}</p>
+                        <p>Price: ${product.price}</p>
+                    `;
+                    productList.appendChild(productCard);
+                });
+            });
+    </script>
+</body>
+</html>
