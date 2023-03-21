@@ -16,6 +16,11 @@ import (
 	_ "github.com/lib/pq"
 )
 
+type APIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 type Item struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
@@ -51,26 +56,40 @@ func main() {
 
 func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		r.ParseMultipartForm(10 << 20)
 
 		name := r.FormValue("name")
 		description := r.FormValue("description")
 		image, handler, err := r.FormFile("image")
+
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Error getting image file: %v", err)
 			return
 		}
 		defer image.Close()
+		allowedExtensions := map[string]bool{
+			".jpg":  true,
+			".jpeg": true,
+			".png":  true,
+		}
 
 		filename := handler.Filename
 		ext := filepath.Ext(filename)
+		if !allowedExtensions[ext] {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Invalid file format. Only JPG, JPEG, PNG files are allowed.")
+			return
+		}
+
 		tempFile, err := os.CreateTemp("", "upload-*"+ext)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error creating temporary file: %v", err)
 			return
 		}
+
 		defer tempFile.Close()
 		io.Copy(tempFile, image)
 
@@ -96,6 +115,15 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 		defer stmt.Close()
 
 		result, err := stmt.Exec(name, description, imageURL)
+		if name == "" {
+			apierror := APIError{
+				Code:    http.StatusBadRequest,
+				Message: "Category is required",
+			}
+			w.WriteHeader(apierror.Code)
+			json.NewEncoder(w).Encode(apierror)
+			return
+		}
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error executing SQL statement: %v", err)
@@ -111,7 +139,8 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 			ImageURL:    imageURL,
 		}
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, "Item created successfully: %+v", item)
+		// fmt.Fprintf(w, "Item created successfully: %+v", item)
+		json.NewEncoder(w).Encode(item)
 	}
 }
 
@@ -139,13 +168,4 @@ func GetItems(db *sql.DB) func(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(items)
 	}
-}
-
-func getBaseDir() string {
-	baseDir := "uploads"
-	err := os.MkdirAll(baseDir, os.ModePerm)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return baseDir
 }
