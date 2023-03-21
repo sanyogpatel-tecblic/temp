@@ -95,6 +95,9 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 
 		// imageURL := tempFile.Name()
 
+		//the newPath variable is created to hold the file path of the uploaded file
+		// in the "uploads" directory. filepath.Join is used to join the "uploads" directory and
+		// the file name to create the complete file path.
 		newPath := filepath.Join("uploads", filename)
 		err = os.Rename(tempFile.Name(), newPath)
 		if err != nil {
@@ -118,7 +121,7 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 		if name == "" {
 			apierror := APIError{
 				Code:    http.StatusBadRequest,
-				Message: "Category is required",
+				Message: "Product name is required",
 			}
 			w.WriteHeader(apierror.Code)
 			json.NewEncoder(w).Encode(apierror)
@@ -139,7 +142,7 @@ func createItemHandler(db *sql.DB) func(w http.ResponseWriter, r *http.Request) 
 			ImageURL:    imageURL,
 		}
 		w.WriteHeader(http.StatusCreated)
-		// fmt.Fprintf(w, "Item created successfully: %+v", item)
+		fmt.Fprintf(w, "Item created successfully")
 		json.NewEncoder(w).Encode(item)
 	}
 }
