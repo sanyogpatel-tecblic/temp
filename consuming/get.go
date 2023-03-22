@@ -37,7 +37,6 @@ func MakeGet() {
 			http.Error(w, "Error parsing response data", http.StatusInternalServerError)
 			return
 		}
-
 		// Create an HTML template
 		tmpl := template.Must(template.ParseFiles("./templates/home.page.tmpl"))
 
@@ -48,5 +47,4 @@ func MakeGet() {
 			return
 		}
 	})
-
 }
